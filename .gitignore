@@ -1,0 +1,17 @@
+.vscode/
+build/
+out/
+.git/
+.gitignore
+*.o
+*.obj
+*.lib
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ppm
+*.png
+CMakeUserPresets.json
