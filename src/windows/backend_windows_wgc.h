@@ -41,12 +41,15 @@ private:
     winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool frame_pool_{ nullptr };
     winrt::Windows::Graphics::Capture::GraphicsCaptureSession session_{ nullptr };
     winrt::event_token frame_arrived_token_{};
+    winrt::event_token item_closed_token_{};
+    bool item_closed_registered_ = false;
     
     // Frame synchronization
     std::mutex frame_mutex_;
     std::condition_variable frame_cv_;
     ComPtr<ID3D11Texture2D> latest_frame_texture_;
     bool frame_ready_ = false;
+    bool target_lost_ = false;
     
     // Staging texture (reused across frames)
     ComPtr<ID3D11Texture2D> staging_texture_;
@@ -65,6 +68,9 @@ private:
     Error read_frame_to_cpu(ID3D11Texture2D* source, Frame& out_frame);
     void on_frame_arrived(
         winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender,
+        winrt::Windows::Foundation::IInspectable const& args);
+    void on_capture_item_closed(
+        winrt::Windows::Graphics::Capture::GraphicsCaptureItem const& sender,
         winrt::Windows::Foundation::IInspectable const& args);
     Error ensure_staging_texture(uint32_t width, uint32_t height, DXGI_FORMAT format);
 };

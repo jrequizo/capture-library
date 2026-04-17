@@ -21,10 +21,13 @@ if(WIN32)
         src/windows/backend_windows_wgc.cpp
     )
     set(PLATFORM_LIBS d3d11 dxgi windowsapp)
-else()
+elseif(APPLE)
     set(PLATFORM_SOURCES
-        src/linux/backend_linux_portal_pipewire.cpp
+        src/macos/backend_macos_screencapturekit.cpp
     )
+    set(PLATFORM_LIBS)
+else()
+    set(PLATFORM_SOURCES)
     set(PLATFORM_LIBS)
 endif()
 
@@ -64,6 +67,27 @@ target_link_libraries(capture_once
 )
 
 set_target_properties(capture_once PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+)
+
+# Example executable: sustained capture loop
+add_executable(capture_loop
+    examples/capture_loop.cpp
+)
+
+target_include_directories(capture_loop
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(capture_loop
+    PRIVATE
+        capture_lib
+)
+
+set_target_properties(capture_loop PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )

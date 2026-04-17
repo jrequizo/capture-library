@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -19,39 +20,86 @@ struct BenchmarkStats {
     uint32_t frame_count = 0;
 };
 
+bool parse_region(const std::string& value, capture::CaptureRect& out_region) {
+    char comma1 = '\0';
+    char comma2 = '\0';
+    char comma3 = '\0';
+    std::istringstream stream(value);
+    stream >> out_region.x >> comma1 >> out_region.y >> comma2
+           >> out_region.width >> comma3 >> out_region.height;
+
+    return stream && comma1 == ',' && comma2 == ',' && comma3 == ',';
+}
+
 int main(int argc, char* argv[]) {
 #ifdef _WIN32
     winrt::init_apartment(winrt::apartment_type::multi_threaded);
 #endif
 
+    capture::BackendType backend_type = capture::BackendType::Auto;
     uint32_t monitor_index = 0;
     uint32_t num_frames = 300;  // ~5 seconds at 60 FPS
+    int timeout_ms = 3000;
+    bool json_output = false;
+    capture::CaptureRect region;
+    bool has_region = false;
 
     // Parse command line
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--monitor" && i + 1 < argc) {
+        if (arg == "--backend" && i + 1 < argc) {
+            std::string backend_str = argv[++i];
+            if (backend_str == "windows") {
+                backend_type = capture::BackendType::Windows;
+            } else if (backend_str == "macos") {
+                backend_type = capture::BackendType::MacOS;
+            } else if (backend_str == "auto") {
+                backend_type = capture::BackendType::Auto;
+            } else {
+                std::cerr << "Unknown backend: " << backend_str << "\n";
+                return 1;
+            }
+        } else if (arg == "--monitor" && i + 1 < argc) {
             monitor_index = std::stoi(argv[++i]);
         } else if (arg == "--frames" && i + 1 < argc) {
             num_frames = std::stoi(argv[++i]);
+        } else if (arg == "--timeout-ms" && i + 1 < argc) {
+            timeout_ms = std::stoi(argv[++i]);
+        } else if (arg == "--region" && i + 1 < argc) {
+            if (!parse_region(argv[++i], region)) {
+                std::cerr << "Invalid region. Expected x,y,w,h\n";
+                return 1;
+            }
+            has_region = true;
+        } else if (arg == "--json") {
+            json_output = true;
         } else if (arg == "--help") {
             std::cout << "benchmark_fps - Measure display capture FPS\n"
                       << "Usage: benchmark_fps [options]\n"
+                      << "  --backend NAME    Backend: windows, macos, auto (default: auto)\n"
                       << "  --monitor INDEX   Capture from monitor INDEX (default: 0)\n"
                       << "  --frames COUNT    Number of frames to capture (default: 300)\n"
+                      << "  --timeout-ms MS   Frame timeout (default: 3000)\n"
+                      << "  --region X,Y,W,H  Capture region relative to the monitor\n"
+                      << "  --json            Print machine-readable metrics\n"
                       << "  --help            Show this message\n";
             return 0;
+        } else {
+            std::cerr << "Unknown or incomplete option: " << arg << "\n";
+            return 1;
         }
     }
 
     // Create backend
     std::unique_ptr<capture::ICaptureBackend> backend;
-    auto err = capture::CaptureFactory::create_platform_backend(backend);
+    auto err = capture::CaptureFactory::create_backend(backend_type, backend);
     if (!err.is_success()) {
         std::cerr << "Failed to create backend: " << err.to_string() << "\n";
         return 1;
     }
-    std::cout << "Backend created successfully\n";
+    if (!json_output) {
+        std::cout << "Backend created successfully\n";
+    }
 
     // List available targets
     std::vector<capture::CaptureTarget> targets;
@@ -60,30 +108,44 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to list targets: " << err.to_string() << "\n";
         return 1;
     }
-    std::cout << "Found " << targets.size() << " capture targets\n";
+    if (!json_output) {
+        std::cout << "Found " << targets.size() << " capture targets\n";
+    }
 
     if (monitor_index >= targets.size()) {
         std::cerr << "Monitor index " << monitor_index << " out of range\n";
         return 1;
     }
 
+    capture::CaptureTarget selected_target = targets[monitor_index];
+    if (has_region) {
+        selected_target.region = region;
+        selected_target.has_region = true;
+    }
+
     // Initialize backend for target
-    err = backend->init(targets[monitor_index]);
+    err = backend->init(selected_target);
     if (!err.is_success()) {
         std::cerr << "Failed to initialize backend: " << err.to_string() << "\n";
         return 1;
     }
-    std::cout << "Backend initialized for monitor " << monitor_index << "\n";
+    if (!json_output) {
+        std::cout << "Backend initialized for monitor " << monitor_index << "\n";
+    }
 
     // Warmup: capture 5 frames to stabilize
-    std::cout << "\nWarmup (5 frames)...\n";
+    if (!json_output) {
+        std::cout << "\nWarmup (5 frames)...\n";
+    }
     for (int i = 0; i < 5; ++i) {
         capture::Frame frame;
-        backend->grab_frame(frame, 3000);  // 3 second timeout
+        backend->grab_frame(frame, timeout_ms);
     }
 
     // Benchmark: measure frame capture timing
-    std::cout << "Benchmarking (" << num_frames << " frames)...\n";
+    if (!json_output) {
+        std::cout << "Benchmarking (" << num_frames << " frames)...\n";
+    }
     std::vector<double> frame_times;
     frame_times.reserve(num_frames);
 
@@ -93,7 +155,7 @@ int main(int argc, char* argv[]) {
         capture::Frame frame;
         
         auto frame_start = std::chrono::high_resolution_clock::now();
-        err = backend->grab_frame(frame, 3000);
+        err = backend->grab_frame(frame, timeout_ms);
         auto frame_end = std::chrono::high_resolution_clock::now();
 
         if (!err.is_success()) {
@@ -104,7 +166,7 @@ int main(int argc, char* argv[]) {
         double frame_time_ms = std::chrono::duration<double, std::milli>(frame_end - frame_start).count();
         frame_times.push_back(frame_time_ms);
 
-        if ((i + 1) % 50 == 0) {
+        if (!json_output && (i + 1) % 50 == 0) {
             std::cout << "  Captured " << (i + 1) << "/" << num_frames << " frames\n";
         }
     }
@@ -125,15 +187,31 @@ int main(int argc, char* argv[]) {
             stats.max_ms = std::max(stats.max_ms, t);
         }
 
-        // Calculate 1% low (percentile)
         std::sort(frame_times.begin(), frame_times.end());
-        size_t low_1pct_idx = frame_times.size() / 100;
-        if (low_1pct_idx == 0) low_1pct_idx = 1;
-        double low_1pct = frame_times[low_1pct_idx];
     }
 
     // Shutdown backend
     backend->shutdown();
+
+    double avg_fps = stats.avg_ms > 0.0 ? 1000.0 / stats.avg_ms : 0.0;
+    double max_fps = stats.min_ms > 0.0 ? 1000.0 / stats.min_ms : 0.0;
+    double min_fps = stats.max_ms > 0.0 ? 1000.0 / stats.max_ms : 0.0;
+
+    if (json_output) {
+        std::cout << std::fixed << std::setprecision(3)
+                  << "{"
+                  << "\"frames\":" << stats.frame_count << ","
+                  << "\"total_ms\":" << stats.total_ms << ","
+                  << "\"avg_ms\":" << stats.avg_ms << ","
+                  << "\"min_ms\":" << stats.min_ms << ","
+                  << "\"max_ms\":" << stats.max_ms << ","
+                  << "\"avg_fps\":" << avg_fps << ","
+                  << "\"peak_fps\":" << max_fps << ","
+                  << "\"low_fps\":" << min_fps
+                  << "}\n";
+
+        return avg_fps >= 60.0 ? 0 : 1;
+    }
 
     // Report results
     std::cout << "\n========== BENCHMARK RESULTS ==========\n";
@@ -145,10 +223,6 @@ int main(int argc, char* argv[]) {
     std::cout << "  Max:      " << std::fixed << std::setprecision(3) << stats.max_ms << " ms\n";
     
     // Calculate and report FPS
-    double avg_fps = 1000.0 / stats.avg_ms;
-    double max_fps = 1000.0 / stats.min_ms;
-    double min_fps = 1000.0 / stats.max_ms;
-    
     std::cout << "\nFrames Per Second:\n";
     std::cout << "  Avg FPS:  " << std::fixed << std::setprecision(1) << avg_fps << " fps\n";
     std::cout << "  Peak FPS: " << std::fixed << std::setprecision(1) << max_fps << " fps\n";

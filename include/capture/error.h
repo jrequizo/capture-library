@@ -15,6 +15,7 @@ enum class ErrorCode {
     InvalidMonitorIndex = 7,
     InitializationFailed = 8,
     AccessDenied = 9,
+    InvalidRegion = 10,
 };
 
 class Error {

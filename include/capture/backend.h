@@ -10,14 +10,34 @@
 
 namespace capture {
 
+constexpr uint32_t CAPTURE_API_VERSION_MAJOR = 0;
+constexpr uint32_t CAPTURE_API_VERSION_MINOR = 2;
+constexpr uint32_t CAPTURE_API_VERSION_PATCH = 0;
+
+struct CaptureRect {
+    int32_t x = 0;
+    int32_t y = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
 struct CaptureTarget {
     enum class Kind {
         Monitor,
         Window
     };
     
-    Kind kind;
-    uint64_t id;  // backend-specific handle or index
+    Kind kind = Kind::Monitor;
+    uint64_t id = 0;  // backend-specific handle or index
+
+    // Metadata populated by list_targets().
+    std::string name;
+    CaptureRect bounds;
+    bool has_bounds = false;
+
+    // Optional capture region, relative to the target's top-left corner.
+    CaptureRect region;
+    bool has_region = false;
 };
 
 class ICaptureBackend {

@@ -2,8 +2,8 @@
 
 #ifdef _WIN32
 #include "../windows/backend_windows_wgc.h"
-#else
-#include "../linux/backend_linux_portal_pipewire.h"
+#elif defined(__APPLE__)
+#include "../macos/backend_macos_screencapturekit.h"
 #endif
 
 namespace capture {
@@ -17,9 +17,9 @@ Error CaptureFactory::create_backend(
         out_backend = std::make_unique<WindowsWgcBackend>();
         return Error(ErrorCode::Success);
     }
-#else
-    if (type == BackendType::Linux || type == BackendType::Auto) {
-        out_backend = std::make_unique<LinuxPortalPipewireBackend>();
+#elif defined(__APPLE__)
+    if (type == BackendType::MacOS || type == BackendType::Auto) {
+        out_backend = std::make_unique<MacOSScreenCaptureKitBackend>();
         return Error(ErrorCode::Success);
     }
 #endif

@@ -36,6 +36,9 @@ std::string Error::to_string() const {
         case ErrorCode::AccessDenied:
             code_name = "AccessDenied";
             break;
+        case ErrorCode::InvalidRegion:
+            code_name = "InvalidRegion";
+            break;
         default:
             code_name = "Unknown";
             break;

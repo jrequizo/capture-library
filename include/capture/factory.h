@@ -10,7 +10,7 @@ namespace capture {
 
 enum class BackendType {
     Windows,
-    Linux,
+    MacOS,
     Auto  // detect based on platform
 };
 
