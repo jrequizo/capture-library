@@ -113,6 +113,12 @@ Benchmark with structured metrics:
 ./benchmark_fps --monitor 0 --frames 300 --json
 ```
 
+Benchmark with CI-style thresholds and an artifact file:
+
+```bash
+./benchmark_fps --monitor 0 --frames 300 --min-avg-fps 60 --max-frame-ms 50 --artifact benchmark-monitor0.json
+```
+
 Run a sustained capture smoke test:
 
 ```bash
@@ -141,6 +147,10 @@ Run a sustained capture smoke test:
 --frames <count>                 Number of frames to capture (default: 300)
 --timeout-ms <ms>                Frame timeout (default: 3000)
 --region <x,y,w,h>               Capture region relative to the monitor
+--min-avg-fps <fps>              Minimum average FPS threshold (default: 60)
+--max-avg-ms <ms>                Optional maximum average frame time threshold
+--max-frame-ms <ms>              Optional maximum single-frame time threshold
+--artifact <path>                Write JSON benchmark artifact to path
 --json                           Print machine-readable metrics
 --help                           Show help message
 ```
@@ -173,7 +183,7 @@ Run a sustained capture smoke test:
 - GPU to CPU BGRA8 transfer.
 - Windows region capture.
 - Sustained capture loop smoke-test utility.
-- Benchmark utility with optional JSON metrics.
+- Benchmark utility with optional JSON metrics, percentile timings, thresholds, and artifact output.
 
 ### Planned
 

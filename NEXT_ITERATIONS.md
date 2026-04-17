@@ -48,7 +48,8 @@
 ### Work Items
 
 - Add stress tests for long capture sessions and repeated init/shutdown cycles.
-- Add benchmark thresholds and baseline snapshots for single-monitor and multi-monitor setups.
+- [x] Add benchmark thresholds and baseline snapshots for single-monitor setups.
+- Add benchmark threshold presets for multi-monitor setups.
 - Reduce overhead in hot paths:
   - Avoid redundant start/stop checks in per-frame paths.
   - Reuse staging textures and verify no unnecessary reallocations.
@@ -153,6 +154,6 @@
 
 ## Suggested Immediate Next Sprint (2-5 days)
 
-1. Add benchmark baseline artifacts and threshold checking.
-2. Start macOS ScreenCaptureKit target enumeration and permission probing.
-3. Add longer stress coverage for repeated backend init/shutdown cycles.
+1. Start macOS ScreenCaptureKit target enumeration and permission probing.
+2. Add longer stress coverage for repeated backend init/shutdown cycles.
+3. Add benchmark threshold presets for multi-monitor setups.
