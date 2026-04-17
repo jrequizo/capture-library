@@ -337,10 +337,10 @@ Error WindowsWgcBackend::read_frame_to_cpu(ID3D11Texture2D* source, Frame& out_f
     D3D11_TEXTURE2D_DESC desc;
     source->GetDesc(&desc);
     
-    // Verify format is BGRA8
+    // WGC delivers BGRA8; the public frame contract exports packed BGR8.
     if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) {
         return Error(ErrorCode::UnsupportedPixelFormat,
-                     "Captured texture is not BGRA8 format");
+                     "Captured texture is not BGRA8 source format");
     }
     
     // Ensure staging texture exists with correct dimensions
@@ -372,26 +372,30 @@ Error WindowsWgcBackend::read_frame_to_cpu(ID3D11Texture2D* source, Frame& out_f
         copy_region = current_target_.region;
     }
 
-    // Copy data respecting GPU row pitch.
-    uint32_t stride = copy_region.width * 4;  // BGRA8 = 4 bytes per pixel
-    uint8_t* src = static_cast<uint8_t*>(mapped.pData);
+    // Copy data respecting GPU row pitch and drop alpha for packed BGR output.
+    uint32_t stride = copy_region.width * 3;  // BGR8 = 3 bytes per pixel
+    const uint8_t* src = static_cast<const uint8_t*>(mapped.pData);
     uint8_t* dst = nullptr;
     
     out_frame.width = copy_region.width;
     out_frame.height = copy_region.height;
     out_frame.stride_bytes = stride;
-    out_frame.format = PixelFormat::Bgra8Unorm;
+    out_frame.format = PixelFormat::Bgr8Unorm;
     out_frame.timestamp_ns = monotonic_now_ns();
     out_frame.bytes.resize(stride * copy_region.height);
     dst = out_frame.bytes.data();
     
-    // Copy row-by-row, respecting GPU's row pitch
+    // Copy row-by-row, respecting GPU's row pitch.
     const uint32_t src_x = static_cast<uint32_t>(copy_region.x);
     const uint32_t src_y = static_cast<uint32_t>(copy_region.y);
     for (uint32_t y = 0; y < copy_region.height; ++y) {
-        memcpy(dst + y * stride,
-               src + (src_y + y) * mapped.RowPitch + src_x * 4,
-               stride);
+        const uint8_t* src_row = src + (src_y + y) * mapped.RowPitch + src_x * 4;
+        uint8_t* dst_row = dst + y * stride;
+        for (uint32_t x = 0; x < copy_region.width; ++x) {
+            dst_row[x * 3 + 0] = src_row[x * 4 + 0];
+            dst_row[x * 3 + 1] = src_row[x * 4 + 1];
+            dst_row[x * 3 + 2] = src_row[x * 4 + 2];
+        }
     }
     
     context_->Unmap(staging_texture_.Get(), 0);

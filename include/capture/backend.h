@@ -11,8 +11,8 @@
 namespace capture {
 
 constexpr uint32_t CAPTURE_API_VERSION_MAJOR = 0;
-constexpr uint32_t CAPTURE_API_VERSION_MINOR = 2;
-constexpr uint32_t CAPTURE_API_VERSION_PATCH = 0;
+constexpr uint32_t CAPTURE_API_VERSION_MINOR = 3;
+constexpr uint32_t CAPTURE_API_VERSION_PATCH = 1;
 
 struct CaptureRect {
     int32_t x = 0;

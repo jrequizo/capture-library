@@ -1,4 +1,5 @@
 #include <capture/factory.h>
+#include <capture/frame_validation.h>
 #include <chrono>
 #include <cstring>
 #include <fstream>
@@ -23,6 +24,8 @@ struct BenchmarkStats {
     double p95_ms = 0;
     double p99_ms = 0;
     uint32_t frame_count = 0;
+    uint32_t invariant_failures = 0;
+    std::string last_validation_error;
 };
 
 struct BenchmarkOptions {
@@ -35,8 +38,9 @@ struct BenchmarkOptions {
     capture::CaptureRect region;
     double min_avg_fps = 60.0;
     double max_avg_ms = 0.0;
-    double max_frame_ms = 0.0;
+    double max_frame_ms = 50.0;
     std::string artifact_path;
+    std::string threshold_preset = "single-monitor";
 };
 
 bool parse_region(const std::string& value, capture::CaptureRect& out_region) {
@@ -74,12 +78,38 @@ void print_usage() {
               << "  --frames COUNT          Number of frames to capture (default: 300)\n"
               << "  --timeout-ms MS         Frame timeout (default: 3000)\n"
               << "  --region X,Y,W,H        Capture region relative to the monitor\n"
+              << "  --threshold-preset NAME Thresholds: single-monitor, multi-monitor, smoke\n"
               << "  --min-avg-fps FPS       Minimum average FPS threshold (default: 60)\n"
               << "  --max-avg-ms MS         Optional maximum average frame time threshold\n"
-              << "  --max-frame-ms MS       Optional maximum single-frame time threshold\n"
+              << "  --max-frame-ms MS       Maximum single-frame time threshold (default: 50)\n"
               << "  --artifact PATH         Write JSON benchmark artifact to PATH\n"
               << "  --json                  Print machine-readable metrics\n"
               << "  --help                  Show this message\n";
+}
+
+bool apply_threshold_preset(const std::string& value, BenchmarkOptions& options) {
+    if (value == "single-monitor") {
+        options.threshold_preset = value;
+        options.min_avg_fps = 60.0;
+        options.max_avg_ms = 0.0;
+        options.max_frame_ms = 50.0;
+        return true;
+    }
+    if (value == "multi-monitor") {
+        options.threshold_preset = value;
+        options.min_avg_fps = 45.0;
+        options.max_avg_ms = 35.0;
+        options.max_frame_ms = 75.0;
+        return true;
+    }
+    if (value == "smoke") {
+        options.threshold_preset = value;
+        options.min_avg_fps = 1.0;
+        options.max_avg_ms = 0.0;
+        options.max_frame_ms = 0.0;
+        return true;
+    }
+    return false;
 }
 
 bool parse_options(int argc, char* argv[], BenchmarkOptions& options) {
@@ -102,6 +132,11 @@ bool parse_options(int argc, char* argv[], BenchmarkOptions& options) {
                 return false;
             }
             options.has_region = true;
+        } else if (arg == "--threshold-preset" && i + 1 < argc) {
+            if (!apply_threshold_preset(argv[++i], options)) {
+                std::cerr << "Unknown threshold preset: " << argv[i] << "\n";
+                return false;
+            }
         } else if (arg == "--min-avg-fps" && i + 1 < argc) {
             options.min_avg_fps = std::stod(argv[++i]);
         } else if (arg == "--max-avg-ms" && i + 1 < argc) {
@@ -176,7 +211,9 @@ std::string benchmark_json(
         << "{"
         << "\"frames\":" << stats.frame_count << ","
         << "\"requested_frames\":" << options.num_frames << ","
+        << "\"invariant_failures\":" << stats.invariant_failures << ","
         << "\"monitor_index\":" << options.monitor_index << ","
+        << "\"threshold_preset\":\"" << json_escape(options.threshold_preset) << "\","
         << "\"target_name\":\"" << json_escape(target.name) << "\",";
 
     if (target.has_bounds) {
@@ -207,6 +244,7 @@ std::string benchmark_json(
         << "\"avg_fps\":" << avg_fps << ","
         << "\"peak_fps\":" << peak_fps << ","
         << "\"low_fps\":" << low_fps << ","
+        << "\"last_validation_error\":\"" << json_escape(stats.last_validation_error) << "\","
         << "\"thresholds\":{"
         << "\"min_avg_fps\":" << options.min_avg_fps << ","
         << "\"max_avg_ms\":" << options.max_avg_ms << ","
@@ -277,6 +315,7 @@ int main(int argc, char* argv[]) {
     if (!options.json_output) {
         std::cout << "Backend initialized for monitor " << options.monitor_index << "\n";
     }
+    capture::FrameConformanceChecker checker(selected_target);
 
     // Warmup: capture 5 frames to stabilize
     if (!options.json_output) {
@@ -284,7 +323,16 @@ int main(int argc, char* argv[]) {
     }
     for (int i = 0; i < 5; ++i) {
         capture::Frame frame;
-        backend->grab_frame(frame, options.timeout_ms);
+        err = backend->grab_frame(frame, options.timeout_ms);
+        if (err.is_success()) {
+            const auto validation = checker.validate(frame);
+            if (validation.is_error()) {
+                std::cerr << "Warmup frame failed conformance checks: "
+                          << validation.to_string() << "\n";
+                backend->shutdown();
+                return 1;
+            }
+        }
     }
 
     // Benchmark: measure frame capture timing
@@ -293,6 +341,7 @@ int main(int argc, char* argv[]) {
     }
     std::vector<double> frame_times;
     frame_times.reserve(options.num_frames);
+    BenchmarkStats stats;
 
     auto benchmark_start = std::chrono::high_resolution_clock::now();
 
@@ -308,6 +357,15 @@ int main(int argc, char* argv[]) {
             break;
         }
 
+        const auto validation = checker.validate(frame);
+        if (validation.is_error()) {
+            ++stats.invariant_failures;
+            stats.last_validation_error = validation.to_string();
+            std::cerr << "Frame " << i << " failed conformance checks: "
+                      << stats.last_validation_error << "\n";
+            break;
+        }
+
         double frame_time_ms = std::chrono::duration<double, std::milli>(frame_end - frame_start).count();
         frame_times.push_back(frame_time_ms);
 
@@ -320,7 +378,6 @@ int main(int argc, char* argv[]) {
     double total_time_ms = std::chrono::duration<double, std::milli>(benchmark_end - benchmark_start).count();
 
     // Calculate statistics
-    BenchmarkStats stats;
     stats.frame_count = static_cast<uint32_t>(frame_times.size());
     
     if (stats.frame_count > 0) {
@@ -344,7 +401,9 @@ int main(int argc, char* argv[]) {
     double avg_fps = stats.avg_ms > 0.0 ? 1000.0 / stats.avg_ms : 0.0;
     double max_fps = stats.min_ms > 0.0 ? 1000.0 / stats.min_ms : 0.0;
     double min_fps = stats.max_ms > 0.0 ? 1000.0 / stats.max_ms : 0.0;
-    bool passed = stats.frame_count == options.num_frames && avg_fps >= options.min_avg_fps;
+    bool passed = stats.frame_count == options.num_frames &&
+                  stats.invariant_failures == 0 &&
+                  avg_fps >= options.min_avg_fps;
     if (options.max_avg_ms > 0.0 && stats.avg_ms > options.max_avg_ms) {
         passed = false;
     }
@@ -389,7 +448,9 @@ int main(int argc, char* argv[]) {
     
     // Validate target
     std::cout << "\n========== VALIDATION ==========\n";
+    std::cout << "Threshold preset: " << options.threshold_preset << "\n";
     std::cout << "Frames target: " << stats.frame_count << "/" << options.num_frames << "\n";
+    std::cout << "Invariant failures: " << stats.invariant_failures << "\n";
     std::cout << "Min avg FPS:   " << std::fixed << std::setprecision(1)
               << avg_fps << " / " << options.min_avg_fps << "\n";
     if (options.max_avg_ms > 0.0) {

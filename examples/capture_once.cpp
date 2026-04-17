@@ -10,6 +10,7 @@
 #include <capture/factory.h>
 #include <capture/backend.h>
 #include <capture/frame.h>
+#include <capture/frame_validation.h>
 #include "png_writer.h"
 
 using namespace capture;
@@ -167,6 +168,15 @@ int main(int argc, char* argv[]) {
     
     if (err.is_error()) {
         std::cout << "Failed to grab frame: " << err.to_string() << "\n";
+        backend->shutdown();
+        return 1;
+    }
+
+    FrameConformanceChecker checker(selected_target);
+    err = checker.validate(frame);
+    if (err.is_error()) {
+        std::cerr << "Captured frame failed conformance checks: "
+                  << err.to_string() << "\n";
         backend->shutdown();
         return 1;
     }

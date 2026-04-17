@@ -2,7 +2,11 @@
 
 #include "capture/backend.h"
 
+#include <memory>
+
 namespace capture {
+
+struct MacOSScreenCaptureKitState;
 
 class MacOSScreenCaptureKitBackend : public ICaptureBackend {
 public:
@@ -15,8 +19,7 @@ public:
     Error shutdown() override;
 
 private:
-    bool initialized_ = false;
-    CaptureTarget current_target_;
+    std::unique_ptr<MacOSScreenCaptureKitState> state_;
 };
 
 }  // namespace capture

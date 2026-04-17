@@ -1,6 +1,7 @@
 #include <capture/backend.h>
 #include <capture/factory.h>
 #include <capture/frame.h>
+#include <capture/frame_validation.h>
 
 #include <algorithm>
 #include <chrono>
@@ -119,19 +120,6 @@ bool parse_options(int argc, char* argv[], LoopOptions& options) {
     return true;
 }
 
-bool frame_contract_is_valid(const capture::Frame& frame) {
-    if (frame.format != capture::PixelFormat::Bgra8Unorm) {
-        return false;
-    }
-    if (frame.width == 0 || frame.height == 0) {
-        return false;
-    }
-    if (frame.stride_bytes != frame.width * 4) {
-        return false;
-    }
-    return frame.bytes.size() == static_cast<size_t>(frame.stride_bytes) * frame.height;
-}
-
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -187,6 +175,7 @@ int main(int argc, char* argv[]) {
     }
 
     LoopStats stats;
+    capture::FrameConformanceChecker checker(selected_target);
     const auto loop_start = std::chrono::steady_clock::now();
 
     for (uint32_t i = 0; i < options.frames; ++i) {
@@ -203,10 +192,11 @@ int main(int argc, char* argv[]) {
             stats.min_grab_ms = std::min(stats.min_grab_ms, grab_ms);
             stats.max_grab_ms = std::max(stats.max_grab_ms, grab_ms);
 
-            if (!frame_contract_is_valid(frame)) {
+            const capture::Error validation = checker.validate(frame);
+            if (validation.is_error()) {
                 ++stats.invariant_errors;
-                stats.last_error = capture::ErrorCode::BackendFailure;
-                stats.last_error_message = "Frame contract invariant failed";
+                stats.last_error = validation.code();
+                stats.last_error_message = validation.to_string();
             }
         } else if (err.code() == capture::ErrorCode::Timeout) {
             ++stats.timeouts;

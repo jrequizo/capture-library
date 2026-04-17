@@ -7,8 +7,8 @@
 
 namespace capture {
 
-// Write a Frame to PNG file
-// Expects BGRA8 format, converts to RGB for PNG output
+// Write a Frame to PNG file.
+// Expects BGR8 format, converts to RGB for PPM-compatible output.
 Error write_frame_to_png(const Frame& frame, const std::string& filepath);
 
 }  // namespace capture

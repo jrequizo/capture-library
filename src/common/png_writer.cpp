@@ -8,9 +8,9 @@ namespace capture {
 // This is a minimal implementation for MVP; consider using libpng for production
 
 Error write_frame_to_png(const Frame& frame, const std::string& filepath) {
-    if (frame.format != PixelFormat::Bgra8Unorm) {
+    if (frame.format != PixelFormat::Bgr8Unorm) {
         return Error(ErrorCode::UnsupportedPixelFormat,
-                     "PNG writer only supports BGRA8Unorm");
+                     "PNG writer only supports BGR8Unorm");
     }
     
     if (frame.bytes.empty()) {
@@ -32,15 +32,14 @@ Error write_frame_to_png(const Frame& frame, const std::string& filepath) {
     file << frame.width << " " << frame.height << "\n";
     file << "255\n";
     
-    // Convert BGRA to RGB and write
+    // Convert BGR to RGB and write.
     for (uint32_t y = 0; y < frame.height; ++y) {
         for (uint32_t x = 0; x < frame.width; ++x) {
-            uint32_t pixel_offset = y * frame.stride_bytes + x * 4;
+            uint32_t pixel_offset = y * frame.stride_bytes + x * 3;
             
             uint8_t b = frame.bytes[pixel_offset + 0];
             uint8_t g = frame.bytes[pixel_offset + 1];
             uint8_t r = frame.bytes[pixel_offset + 2];
-            // uint8_t a = frame.bytes[pixel_offset + 3];  // unused
             
             file.put(static_cast<char>(r));
             file.put(static_cast<char>(g));
